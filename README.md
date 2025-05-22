@@ -98,15 +98,19 @@ Este projeto contém a infraestrutura como código (IaC) para o ambiente EasyPro
 
 ### 1. Criar recursos para o backend remoto
 
+Execute o script de configuração do backend que criará o bucket S3 e a tabela DynamoDB necessários:
+
 ```bash
-aws s3 mb s3://easyprofind-terraform-state --region us-east-1
-aws dynamodb create-table \
-  --table-name terraform-state-lock \
-  --attribute-definitions AttributeName=LockID,AttributeType=S \
-  --key-schema AttributeName=LockID,KeyType=HASH \
-  --billing-mode PAY_PER_REQUEST \
-  --region us-east-1
+# Tornar o script executável (se necessário)
+chmod +x scripts/setup/setup_backend.sh
+
+# Executar o script
+./scripts/setup/setup_backend.sh
 ```
+
+O script verifica se os recursos já existem antes de tentar criá-los e configura:
+- Bucket S3 `easyprofind-terraform-state` com versionamento e criptografia
+- Tabela DynamoDB `terraform-state-lock` para controle de concorrência
 
 ### 2. Uso
 
