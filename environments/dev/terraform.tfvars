@@ -24,7 +24,7 @@ api_gateway_mappings = {
 auxiliary_instances = {
   keycloak = {
     ami           = "ami-0c7217cdde317cfec"  # Amazon Linux 2023
-    instance_type = "t3.micro"
+    instance_type = "t3.small"
     name          = "keycloak"
     disk_size     = 8
   },
@@ -36,25 +36,25 @@ auxiliary_instances = {
   },
   monitoring = {
     ami           = "ami-0c7217cdde317cfec"  # Amazon Linux 2023
-    instance_type = "t3.micro"
+    instance_type = "t3.small"
     name          = "monitoring"
     disk_size     = 8
   },
   redis = {
     ami           = "ami-0c7217cdde317cfec"  # Amazon Linux 2023
-    instance_type = "t3.micro"
+    instance_type = "t3.small"
     name          = "redis"
     disk_size     = 8  # Aumentado para 8GB conforme requisito mínimo do snapshot
   },
   postgres = {
     ami           = "ami-0c7217cdde317cfec"  # Amazon Linux 2023
-    instance_type = "t3.micro"
+    instance_type = "t3.small"
     name          = "postgres"
     disk_size     = 8
   },
   mongodb = {
     ami           = "ami-0c7217cdde317cfec"  # Amazon Linux 2023
-    instance_type = "t3.micro"
+    instance_type = "t3.small"
     name          = "mongodb"
     disk_size     = 8
   }

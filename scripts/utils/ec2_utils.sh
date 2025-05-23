@@ -194,7 +194,25 @@ configure_keycloak() {
         return 0
     elif [[ $keycloak_status == *"INSTALLED_NOT_RUNNING"* ]]; then
         echo "Keycloak está instalado mas não está rodando. Iniciando serviço..."
-        local keycloak_start_cmd='cd /home/ubuntu/keycloak-22.0.5/bin && sudo nohup ./kc.sh start-dev --https-port=8443 --http-relative-path=/auth --hostname-strict=false --hostname=0.0.0.0 --http-enabled=false > /tmp/keycloak.log 2>&1 &
+        local keycloak_start_cmd='set -e
+                                    # Parar qualquer processo existente
+                                    sudo pkill -f "keycloak|kc.sh" || true
+                                    sleep 5
+                                    
+                                    # Configurar permissões
+                                    sudo chown -R ubuntu:ubuntu /home/ubuntu/keycloak-22.0.5
+                                    
+                                    # Iniciar Keycloak como usuário ubuntu
+                                    cd /home/ubuntu/keycloak-22.0.5/bin
+                                    sudo -u ubuntu nohup ./kc.sh start-dev \
+                                        --https-port=8443 \
+                                        --http-port=0 \
+                                        --http-relative-path=/auth \
+                                        --hostname-strict=false \
+                                        --hostname=0.0.0.0 \
+                                        --http-enabled=false \
+                                        > /tmp/keycloak.log 2>&1 &
+                                    
                                     sleep 15  # Dar mais tempo para o Keycloak iniciar
                                     if ps aux | grep -v grep | grep -E "keycloak|kc.sh" > /dev/null; then
                                         echo "Keycloak iniciado com sucesso"
@@ -222,8 +240,16 @@ configure_keycloak() {
                             echo "Configurando Keycloak..."
                             cd /home/ubuntu/keycloak-22.0.5/bin
                             sudo chmod +x kc.sh
+                            sudo chown -R ubuntu:ubuntu /home/ubuntu/keycloak-22.0.5
                             echo "Iniciando Keycloak..."
-                            nohup ./kc.sh start-dev --https-port=8443 --http-relative-path=/auth > /tmp/keycloak.log 2>&1 &
+                            sudo -u ubuntu nohup ./kc.sh start-dev \
+                                --https-port=8443 \
+                                --http-port=0 \
+                                --http-relative-path=/auth \
+                                --hostname-strict=false \
+                                --hostname=0.0.0.0 \
+                                --http-enabled=false \
+                                > /tmp/keycloak.log 2>&1 &
                             echo "Verificando se o Keycloak iniciou..."
                             sleep 15
                             if ps aux | grep -v grep | grep -E "keycloak|kc.sh" > /dev/null; then
