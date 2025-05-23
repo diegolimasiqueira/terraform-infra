@@ -13,6 +13,8 @@ Este projeto contém a infraestrutura como código (IaC) para o ambiente EasyPro
 │   │   ├── outputs.tf           # Outputs específicos do ambiente
 │   │   ├── terraform.tfvars     # Valores das variáveis para dev
 │   │   ├── backend.tf           # Configuração do backend para dev
+│   │   ├── providers.tf         # Configuração dos providers
+│   │   ├── versions.tf          # Versões dos providers
 │   │   └── apply.sh             # Script para aplicar infraestrutura dev
 │   ├── staging/                 # Ambiente de staging
 │   └── prod/                    # Ambiente de produção
@@ -27,9 +29,13 @@ Este projeto contém a infraestrutura como código (IaC) para o ambiente EasyPro
 ├── scripts/                     # Scripts organizados por função
 │   ├── setup/                   # Scripts de configuração inicial
 │   │   ├── check_ssm_availability.sh  # Verifica disponibilidade do SSM
-│   │   └── configure_infra.sh         # Configura serviços nas instâncias
+│   │   ├── configure_infra.sh         # Configura serviços nas instâncias
+│   │   ├── install_prometheus.sh      # Instala e configura o Prometheus
+│   │   ├── install_eks_addons_from_ec2.sh # Instala addons do EKS
+│   │   └── configure_nominatim.sh     # Configura o Nominatim (manual)
 │   ├── operations/              # Scripts operacionais
 │   │   ├── check_infra.sh             # Verifica status dos serviços
+│   │   ├── check_all.sh               # Verificação completa da infraestrutura
 │   │   ├── check_aws_resources.sh     # Lista recursos AWS
 │   │   └── test_keycloak.sh           # Testa o Keycloak
 │   └── utils/                   # Scripts utilitários
@@ -54,7 +60,7 @@ Este projeto contém a infraestrutura como código (IaC) para o ambiente EasyPro
 - Nome: `easyprofind-eks`
 - Versão: 1.32
 - NodeGroup: t3.small, capacidade inicial de 1 nó
-- ALB Ingress Controller instalado via Helm
+- AWS Load Balancer Controller instalado via Helm
 - Ingress configurado para rotas: `/bff`, `/ms-geo`, `/ms-consumers`, `/ms-professionals`, `/ms-rates`
 
 ### 3. API Gateway
@@ -70,7 +76,7 @@ Este projeto contém a infraestrutura como código (IaC) para o ambiente EasyPro
 | `keycloak`   | t3.micro   | 8 GB  | ✅          | Autenticação                        |
 | `nominatim`  | t3.small   | 55 GB | ✅          | Geocodificação reversa              |
 | `monitoring` | t3.micro   | 8 GB  | ✅          | Grafana, Prometheus, Loki           |
-| `redis`      | t3.micro   | 4 GB  | ❌          | Cache interno                       |
+| `redis`      | t3.micro   | 8 GB  | ❌          | Cache interno                       |
 | `postgres`   | t3.micro   | 8 GB  | ❌          | Banco de dados dos microserviços    |
 | `mongodb`    | t3.micro   | 8 GB  | ❌          | Comentários, avaliações, etc.       |
 
@@ -118,18 +124,24 @@ O script verifica se os recursos já existem antes de tentar criá-los e configu
 # Configurar credenciais AWS
 aws configure
 
-# Inicializar e aplicar a infraestrutura
+# Inicializar e aplicar a infraestrutura (inclui configuração automática dos serviços básicos)
 cd environments/dev
 ./apply.sh
 
-# Verificar o status da infraestrutura
-../../scripts/operations/check_infra.sh
+# Instalar addons do EKS (após aplicar a infraestrutura)
+../../scripts/setup/install_eks_addons_from_ec2.sh
+
+# Verificar o status completo da infraestrutura
+../../scripts/operations/check_all.sh
 
 # Verificar recursos AWS
 ../../scripts/operations/check_aws_resources.sh
 
 # Testar o Keycloak
 ../../scripts/operations/test_keycloak.sh
+
+# Configurar Nominatim manualmente (opcional)
+../../scripts/setup/configure_nominatim.sh
 ```
 
 ## Acesso aos Serviços
@@ -144,7 +156,7 @@ Para remover a infraestrutura:
 
 ```bash
 cd environments/dev
-terraform destroy
+./destroy.sh
 ```
 
 **Autor**: Diego Lima  

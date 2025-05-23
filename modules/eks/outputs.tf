@@ -13,8 +13,13 @@ output "cluster_certificate_authority_data" {
   value       = module.eks.cluster_certificate_authority_data
 }
 
+output "cluster_iam_role_name" {
+  description = "Nome do IAM role do cluster"
+  value       = module.eks.cluster_iam_role_name
+}
+
 output "vpc_id" {
-  description = "ID da VPC onde o cluster está implantado"
+  description = "ID da VPC onde o cluster foi criado"
   value       = var.vpc_id
 }
 

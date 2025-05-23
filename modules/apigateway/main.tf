@@ -18,18 +18,21 @@ resource "aws_api_gateway_resource" "paths" {
   path_part   = each.key
 }
 
+# Criamos os métodos usando as chaves do mapeamento diretamente
 resource "aws_api_gateway_method" "get" {
-  for_each = aws_api_gateway_resource.paths
+  for_each = var.mappings
+  
   rest_api_id   = aws_api_gateway_rest_api.api.id
-  resource_id   = each.value.id
+  resource_id   = aws_api_gateway_resource.paths[each.key].id
   http_method   = "ANY"
   authorization = "NONE"
 }
 
 resource "aws_api_gateway_integration" "proxy" {
-  for_each = aws_api_gateway_resource.paths
+  for_each = var.mappings
+  
   rest_api_id = aws_api_gateway_rest_api.api.id
-  resource_id = each.value.id
+  resource_id = aws_api_gateway_resource.paths[each.key].id
   http_method = aws_api_gateway_method.get[each.key].http_method
 
   integration_http_method = "ANY"
@@ -71,6 +74,8 @@ resource "aws_api_gateway_domain_name" "custom" {
   endpoint_configuration {
     types = ["EDGE"]
   }
+  
+  # Comentário opcional para futuras referências
   # lifecycle {
   #   prevent_destroy = true
   # }

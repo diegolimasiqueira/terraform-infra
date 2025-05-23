@@ -7,6 +7,29 @@ module "eks" {
   vpc_id          = var.vpc_id
   enable_irsa     = var.enable_irsa
 
+  # Configurar acesso ao cluster para o usuário atual
+  create_kms_key = true
+  kms_key_administrators = [
+    data.aws_caller_identity.current.arn
+  ]
+  
+  # Permitir que o usuário atual acesse o cluster
+  access_entries = {
+    current_user = {
+      kubernetes_groups = []
+      principal_arn     = data.aws_caller_identity.current.arn
+      
+      policy_associations = {
+        admin = {
+          policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+          access_scope = {
+            type = "cluster"
+          }
+        }
+      }
+    }
+  }
+
   cluster_addons = {
     aws-ebs-csi-driver = { most_recent = true }
     coredns            = { most_recent = true }

@@ -78,7 +78,7 @@ wait_for_command() {
     echo "Aguardando conclusão do comando $command_id na instância $instance_name..."
 
     # Adicionar timeout
-    local timeout=300 # 5 minutos
+    local timeout=600 # 10 minutos
     local start_time=$(date +%s)
 
     while true; do
@@ -208,10 +208,12 @@ configure_keycloak() {
     else
         echo "Instalando Keycloak..."
         local keycloak_cmd='set -e
+                            export DEBIAN_FRONTEND=noninteractive
                             echo "Atualizando pacotes..."
-                            sudo apt update
+                            sudo apt-get update
                             echo "Instalando OpenJDK 17..."
-                            sudo apt install -y openjdk-17-jdk
+                            echo "openjdk-17-jdk openjdk-17-jdk/start-on-boot boolean true" | sudo debconf-set-selections
+                            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" openjdk-17-jdk
                             echo "Baixando Keycloak..."
                             wget -q https://github.com/keycloak/keycloak/releases/download/22.0.5/keycloak-22.0.5.tar.gz
                             echo "Extraindo Keycloak..."
@@ -246,9 +248,19 @@ configure_redis() {
 
     # Verificar se o Redis já está instalado
     echo "Verificando se o Redis já está instalado..."
-    local redis_check_cmd='if systemctl is-active --quiet redis-server && redis-cli ping | grep -q "PONG"; then echo "Redis já está instalado e rodando"; exit 0; elif dpkg -l | grep -q redis-server; then echo "Redis está instalado mas não está rodando"; exit 1; else echo "Redis não está instalado"; exit 2; fi'
+    local redis_check_cmd='set -e
+                           if systemctl is-active --quiet redis-server && redis-cli ping | grep -q "PONG"; then 
+                             echo "Redis já está instalado e rodando"
+                             exit 0
+                           elif dpkg -l | grep -q redis-server; then 
+                             echo "Redis está instalado mas não está rodando"
+                             exit 1
+                           else 
+                             echo "Redis não está instalado"
+                             exit 2
+                           fi'
     local command_id=$(execute_on_instance "$redis_id" "$redis_check_cmd")
-    wait_for_command "$command_id" "$redis_id"
+    wait_for_command "$command_id" "$redis_id" "true"
 
     local redis_status=$(aws ssm get-command-invocation \
         --command-id "$command_id" \
@@ -267,7 +279,15 @@ configure_redis() {
         return $?
     else
         echo "Instalando Redis..."
-        local redis_cmd='sudo apt update && sudo apt install -y redis-server && sudo sed -i "s/bind 127.0.0.1/bind 0.0.0.0/" /etc/redis/redis.conf && sudo systemctl restart redis-server && sudo systemctl enable redis-server && sleep 5 && redis-cli ping'
+        local redis_cmd='export DEBIAN_FRONTEND=noninteractive && \
+            sudo apt-get update && \
+            echo "redis-server redis-server/start_on_boot boolean true" | sudo debconf-set-selections && \
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" redis-server && \
+            sudo sed -i "s/bind 127.0.0.1/bind 0.0.0.0/" /etc/redis/redis.conf && \
+            sudo systemctl restart redis-server && \
+            sudo systemctl enable redis-server && \
+            sleep 5 && \
+            redis-cli ping'
         local command_id=$(execute_on_instance "$redis_id" "$redis_cmd")
         wait_for_command "$command_id" "$redis_id"
         return $?
@@ -283,9 +303,19 @@ configure_mongodb() {
 
     # Verificar se o MongoDB já está instalado
     echo "Verificando se o MongoDB já está instalado..."
-    local mongodb_check_cmd='if systemctl is-active --quiet mongod; then echo "MongoDB já está instalado e rodando"; exit 0; elif dpkg -l | grep -q mongodb-org; then echo "MongoDB está instalado mas não está rodando"; exit 1; else echo "MongoDB não está instalado"; exit 2; fi'
+    local mongodb_check_cmd='set -e
+                             if systemctl is-active --quiet mongod; then 
+                               echo "MongoDB já está instalado e rodando"
+                               exit 0
+                             elif dpkg -l | grep -q mongodb-org; then 
+                               echo "MongoDB está instalado mas não está rodando"
+                               exit 1
+                             else 
+                               echo "MongoDB não está instalado"
+                               exit 2
+                             fi'
     local command_id=$(execute_on_instance "$mongodb_id" "$mongodb_check_cmd")
-    wait_for_command "$command_id" "$mongodb_id"
+    wait_for_command "$command_id" "$mongodb_id" "true"
 
     # Obter o status do comando anterior
     local mongodb_status=$(aws ssm get-command-invocation \
@@ -306,7 +336,17 @@ configure_mongodb() {
     else
         echo "Instalando MongoDB..."
         # Instalação do MongoDB (resumida para brevidade)
-        local mongodb_cmd='sudo apt update && sudo apt install -y gnupg curl && curl -fsSL https://pgp.mongodb.com/server-7.0.asc | sudo gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor && echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list && sudo apt update && sudo apt install -y mongodb-org && sudo systemctl start mongod && sudo systemctl enable mongod'
+        local mongodb_cmd='export DEBIAN_FRONTEND=noninteractive && \
+            sudo apt-get update && \
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" gnupg curl && \
+            curl -fsSL https://pgp.mongodb.com/server-7.0.asc | sudo gpg --batch --yes -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor && \
+            echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list && \
+            sudo apt-get update && \
+            echo "mongodb-org mongodb-org/7.0 boolean true" | sudo debconf-set-selections && \
+            echo "mongodb-org/7.0 mongodb-org/7.0 boolean true" | sudo debconf-set-selections && \
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" mongodb-org && \
+            sudo systemctl start mongod && \
+            sudo systemctl enable mongod'
         local command_id=$(execute_on_instance "$mongodb_id" "$mongodb_cmd")
         wait_for_command "$command_id" "$mongodb_id"
         return $?
@@ -322,15 +362,26 @@ configure_postgres() {
 
     # Verificar se o PostgreSQL já está instalado
     echo "Verificando se o PostgreSQL já está instalado..."
-    local postgres_check_cmd='if systemctl is-active --quiet postgresql; then echo "PostgreSQL já está instalado e rodando"; exit 0; elif dpkg -l | grep -q postgresql; then echo "PostgreSQL está instalado mas não está rodando"; exit 1; else echo "PostgreSQL não está instalado"; exit 2; fi'
+    local postgres_check_cmd='set -e
+                              if systemctl is-active --quiet postgresql; then 
+                                echo "PostgreSQL já está instalado e rodando"
+                                exit 0
+                              elif dpkg -l | grep -q postgresql; then 
+                                echo "PostgreSQL está instalado mas não está rodando"
+                                exit 1
+                              else 
+                                echo "PostgreSQL não está instalado"
+                                exit 2
+                              fi'
     local command_id=$(execute_on_instance "$postgres_id" "$postgres_check_cmd")
-    wait_for_command "$command_id" "$postgres_id"
+    wait_for_command "$command_id" "$postgres_id" "true"
 
+    # Obter o status do comando anterior, mesmo se falhou
     local postgres_status=$(aws ssm get-command-invocation \
         --command-id "$command_id" \
         --instance-id "$postgres_id" \
         --query "StandardOutputContent" \
-        --output text)
+        --output text 2>/dev/null || echo "PostgreSQL não está instalado")
 
     if [[ $postgres_status == *"PostgreSQL já está instalado e rodando"* ]]; then
         echo "PostgreSQL já está configurado e funcionando. Pulando instalação..."
@@ -343,7 +394,30 @@ configure_postgres() {
         return $?
     else
         echo "Instalando PostgreSQL..."
-        local postgres_cmd='sudo apt update && sudo apt install -y postgresql postgresql-contrib && sudo sed -i "s/#listen_addresses = '\''localhost'\''/listen_addresses = '\''*'\''/" /etc/postgresql/14/main/postgresql.conf && echo "host    all             all             0.0.0.0/0               md5" | sudo tee -a /etc/postgresql/14/main/pg_hba.conf && sudo systemctl restart postgresql'
+        local postgres_cmd='set -e
+            export DEBIAN_FRONTEND=noninteractive
+            echo "Atualizando pacotes..."
+            sudo apt-get update
+            
+            echo "Configurando respostas automáticas para PostgreSQL..."
+            echo "postgresql-common postgresql-common/createcluster boolean true" | sudo debconf-set-selections
+            echo "postgresql-common postgresql-common/ssl boolean true" | sudo debconf-set-selections
+            echo "postgresql-14 postgresql-14/start-on-boot boolean true" | sudo debconf-set-selections
+            
+            echo "Instalando PostgreSQL..."
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" postgresql postgresql-contrib
+            
+            echo "Configurando PostgreSQL para aceitar conexões remotas..."
+            sudo sed -i "s/#listen_addresses = '\''localhost'\''/listen_addresses = '\''*'\''/" /etc/postgresql/14/main/postgresql.conf
+            echo "host    all             all             0.0.0.0/0               md5" | sudo tee -a /etc/postgresql/14/main/pg_hba.conf
+            
+            echo "Reiniciando PostgreSQL..."
+            sudo systemctl restart postgresql
+            sudo systemctl enable postgresql
+            
+            echo "Verificando status do PostgreSQL..."
+            sudo systemctl status postgresql --no-pager || true
+            echo "PostgreSQL instalado e configurado com sucesso"'
         local command_id=$(execute_on_instance "$postgres_id" "$postgres_cmd")
         wait_for_command "$command_id" "$postgres_id"
         return $?
@@ -351,6 +425,18 @@ configure_postgres() {
 }
 
 # Função para configurar Monitoring
+# Função para configurar Nominatim
+configure_nominatim() {
+    local nominatim_id=$(aws ec2 describe-instances \
+        --filters "Name=tag:Name,Values=nominatim" \
+        --query "Reservations[].Instances[].InstanceId" \
+        --output text)
+
+    echo "Pulando configuração do Nominatim por enquanto..."
+    echo "Nominatim será configurado manualmente ou em uma etapa posterior."
+    return 0
+}
+
 configure_monitoring() {
     local monitoring_id=$(aws ec2 describe-instances \
         --filters "Name=tag:Name,Values=monitoring" \
@@ -359,29 +445,126 @@ configure_monitoring() {
 
     # Verificar se o Monitoring já está instalado
     echo "Verificando se o Monitoring já está instalado..."
-    local monitoring_check_cmd='if systemctl is-active --quiet grafana-server && [ -f "/usr/local/bin/prometheus" ]; then echo "Monitoring já está instalado e rodando"; exit 0; elif [ -f "/usr/local/bin/prometheus" ] || systemctl is-active --quiet grafana-server; then echo "Monitoring está parcialmente instalado"; exit 1; else echo "Monitoring não está instalado"; exit 2; fi'
+    local monitoring_check_cmd='set -e
+                                grafana_installed=false
+                                prometheus_installed=false
+                                
+                                # Verificar Grafana
+                                if dpkg -l | grep -q grafana; then
+                                  if systemctl is-active --quiet grafana-server 2>/dev/null; then
+                                    echo "Grafana está instalado e rodando"
+                                    grafana_installed=true
+                                  else
+                                    echo "Grafana está instalado mas não está rodando"
+                                    sudo systemctl start grafana-server || true
+                                    sudo systemctl enable grafana-server || true
+                                    if systemctl is-active --quiet grafana-server 2>/dev/null; then
+                                      echo "Grafana iniciado com sucesso"
+                                      grafana_installed=true
+                                    fi
+                                  fi
+                                else
+                                  echo "Grafana não está instalado"
+                                fi
+                                
+                                # Verificar Prometheus
+                                if dpkg -l | grep -q prometheus; then
+                                  if systemctl is-active --quiet prometheus 2>/dev/null; then
+                                    echo "Prometheus está instalado e rodando"
+                                    prometheus_installed=true
+                                  else
+                                    echo "Prometheus está instalado mas não está rodando"
+                                    sudo systemctl start prometheus || true
+                                    sudo systemctl enable prometheus || true
+                                    if systemctl is-active --quiet prometheus 2>/dev/null; then
+                                      echo "Prometheus iniciado com sucesso"
+                                      prometheus_installed=true
+                                    fi
+                                  fi
+                                else
+                                  echo "Prometheus não está instalado"
+                                fi
+                                
+                                # Verificar status geral
+                                if $grafana_installed && $prometheus_installed; then
+                                  echo "Monitoring completo está instalado e rodando"
+                                  exit 0
+                                elif $grafana_installed || $prometheus_installed; then
+                                  echo "Monitoring está parcialmente instalado"
+                                  exit 1
+                                else
+                                  echo "Monitoring não está instalado"
+                                  exit 2
+                                fi'
     local command_id=$(execute_on_instance "$monitoring_id" "$monitoring_check_cmd")
-    wait_for_command "$command_id" "$monitoring_id"
+    wait_for_command "$command_id" "$monitoring_id" "true"
 
     local monitoring_status=$(aws ssm get-command-invocation \
         --command-id "$command_id" \
         --instance-id "$monitoring_id" \
         --query "StandardOutputContent" \
-        --output text)
+        --output text 2>/dev/null || echo "Grafana não está instalado")
 
-    if [[ $monitoring_status == *"Monitoring já está instalado e rodando"* ]]; then
-        echo "Monitoring já está configurado e funcionando. Pulando instalação..."
+    if [[ $monitoring_status == *"Monitoring completo está instalado e rodando"* ]]; then
+        echo "Monitoring completo já está configurado e funcionando. Pulando instalação..."
         return 0
     elif [[ $monitoring_status == *"Monitoring está parcialmente instalado"* ]]; then
-        echo "Monitoring está parcialmente instalado. Verificando e completando instalação..."
-        # Iniciar serviços se necessário
-        local monitoring_start_cmd='sudo systemctl start grafana-server && sudo systemctl enable grafana-server'
-        local command_id=$(execute_on_instance "$monitoring_id" "$monitoring_start_cmd")
+        echo "Monitoring está parcialmente instalado. Completando instalação..."
+        # Iniciar serviços existentes e instalar os que faltam
+        local monitoring_fix_cmd='set -e
+export DEBIAN_FRONTEND=noninteractive
+
+# Iniciar Grafana se instalado
+if dpkg -l | grep -q grafana; then
+    echo "Iniciando Grafana..."
+    sudo systemctl start grafana-server
+    sudo systemctl enable grafana-server
+fi
+
+# Instalar/iniciar Prometheus se necessário
+if ! dpkg -l | grep -q prometheus; then
+    echo "Instalando Prometheus..."
+    sudo apt-get update
+    
+    # Pré-configurar todas as possíveis perguntas
+    sudo debconf-set-selections <<EOF
+prometheus prometheus/restart-services boolean true
+prometheus prometheus/restart-without-asking boolean true
+prometheus-node-exporter prometheus-node-exporter/restart-services boolean true
+prometheus-node-exporter prometheus-node-exporter/restart-without-asking boolean true
+smartmontools smartmontools/start_smartd boolean true
+EOF
+    
+    # Instalar com opções não interativas
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" prometheus
+fi
+
+sudo systemctl start prometheus
+sudo systemctl enable prometheus
+
+echo "Monitoring completo configurado e iniciado"'
+        local command_id=$(execute_on_instance "$monitoring_id" "$monitoring_fix_cmd")
         wait_for_command "$command_id" "$monitoring_id"
         return $?
     else
         echo "Instalando Monitoring..."
-        local monitoring_cmd='wget https://github.com/prometheus/prometheus/releases/download/v2.45.0/prometheus-2.45.0.linux-amd64.tar.gz && tar xvfz prometheus-*.tar.gz && cd prometheus-* && sudo mv prometheus promtool /usr/local/bin/ && sudo mkdir -p /etc/prometheus && sudo mv prometheus.yml /etc/prometheus/ && sudo apt-get install -y apt-transport-https software-properties-common wget && wget -q -O - https://packages.grafana.com/gpg.key | sudo apt-key add - && echo "deb https://packages.grafana.com/oss/deb stable main" | sudo tee -a /etc/apt/sources.list.d/grafana.list && sudo apt-get update && sudo apt-get install -y grafana && sudo systemctl start grafana-server && sudo systemctl enable grafana-server'
+        # Script para instalação do Grafana (Prometheus será instalado separadamente)
+        local monitoring_cmd='set -e
+export DEBIAN_FRONTEND=noninteractive
+echo "Instalando Grafana..."
+sudo apt-get update
+sudo apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" apt-transport-https software-properties-common wget curl gnupg
+
+# Instalar Grafana
+wget -q -O - https://packages.grafana.com/gpg.key | sudo apt-key add --batch --yes -
+echo "deb https://packages.grafana.com/oss/deb stable main" | sudo tee /etc/apt/sources.list.d/grafana.list
+sudo apt-get update
+echo "grafana-server grafana-server/start-on-boot boolean true" | sudo debconf-set-selections
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" grafana
+sudo systemctl start grafana-server
+sudo systemctl enable grafana-server
+
+echo "Grafana instalado com sucesso"'
         local command_id=$(execute_on_instance "$monitoring_id" "$monitoring_cmd")
         wait_for_command "$command_id" "$monitoring_id"
         return $?
